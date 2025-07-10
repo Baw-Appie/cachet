@@ -1,10 +1,5 @@
 name: Build and Push Docker Image
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 on:
   push:
   workflow_dispatch:
@@ -63,10 +58,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true

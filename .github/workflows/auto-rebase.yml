@@ -1,0 +1,127 @@
+name: Auto Rebase from Upstream
+
+on:
+  schedule:
+    # Run daily at 9 AM UTC
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      force_rebase:
+        description: 'Force rebase even if no new commits'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  auto-rebase:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/cachethq/cachet.git
+          git fetch upstream
+
+      - name: Check for new commits in upstream
+        id: check-commits
+        run: |
+          # Get the latest commit hash from upstream 3.x branch
+          UPSTREAM_COMMIT=$(git rev-parse upstream/3.x)
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+          
+          echo "upstream_commit=$UPSTREAM_COMMIT" >> $GITHUB_OUTPUT
+          echo "current_commit=$CURRENT_COMMIT" >> $GITHUB_OUTPUT
+          
+          # Check if there are new commits in upstream
+          if git merge-base --is-ancestor $CURRENT_COMMIT upstream/3.x; then
+            if [ "$CURRENT_COMMIT" != "$UPSTREAM_COMMIT" ]; then
+              echo "has_new_commits=true" >> $GITHUB_OUTPUT
+              echo "New commits found in upstream"
+            else
+              echo "has_new_commits=false" >> $GITHUB_OUTPUT
+              echo "No new commits in upstream"
+            fi
+          else
+            echo "has_new_commits=true" >> $GITHUB_OUTPUT
+            echo "Diverged from upstream, rebase needed"
+          fi
+
+      - name: Perform rebase
+        if: steps.check-commits.outputs.has_new_commits == 'true' || github.event.inputs.force_rebase == 'true'
+        id: rebase
+        run: |
+          echo "Starting rebase..."
+          if git rebase upstream/3.x; then
+            echo "rebase_success=true" >> $GITHUB_OUTPUT
+            echo "Rebase completed successfully"
+          else
+            echo "rebase_success=false" >> $GITHUB_OUTPUT
+            echo "Rebase failed with conflicts"
+            git rebase --abort
+            exit 1
+          fi
+
+      - name: Push to 3.x branch
+        if: (steps.check-commits.outputs.has_new_commits == 'true' || github.event.inputs.force_rebase == 'true') && steps.rebase.outputs.rebase_success == 'true'
+        run: |
+          git push origin HEAD:3.x
+
+      - name: Create rebase summary issue
+        if: (steps.check-commits.outputs.has_new_commits == 'true' || github.event.inputs.force_rebase == 'true') && steps.rebase.outputs.rebase_success == 'true'
+        uses: peter-evans/create-issue-comment@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          body: |
+            ## ✅ Auto Rebase Completed
+            
+            New commits from upstream repository `cachethq/cachet` have been automatically rebased and applied to the 3.x branch.
+            
+            **Changes:**
+            - Upstream commit: `${{ steps.check-commits.outputs.upstream_commit }}`
+            - Previous commit: `${{ steps.check-commits.outputs.current_commit }}`
+            
+            **Auto-generated:** ${{ github.run_id }}
+            
+            Please review the changes and verify that builds and existing customizations are working properly.
+
+      - name: Comment on rebase failure
+        if: failure() && (steps.check-commits.outputs.has_new_commits == 'true' || github.event.inputs.force_rebase == 'true')
+        uses: peter-evans/create-issue-comment@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          body: |
+            ⚠️ **Auto Rebase Failed**
+            
+            Attempted to automatically rebase from upstream repository, but failed due to conflicts.
+            
+            **Manual action required:**
+            ```bash
+            git fetch upstream
+            git rebase upstream/3.x
+            # After resolving conflicts
+            git rebase --continue
+            git push origin 3.x
+            ```
+            
+            **Failed workflow:** ${{ github.run_id }}
+
+      - name: No action needed
+        if: steps.check-commits.outputs.has_new_commits == 'false' && github.event.inputs.force_rebase != 'true'
+        run: |
+          echo "No new commits in upstream. No action needed."

@@ -45,6 +45,15 @@ RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 storage bootstrap/cache \
     && chmod +x artisan /entrypoint.sh
 
+# Create necessary directories and set permissions
+RUN mkdir -p /var/www/html/storage/framework/cache \
+    && mkdir -p /var/www/html/storage/framework/sessions \
+    && mkdir -p /var/www/html/storage/framework/views \
+    && chown -R www-data:www-data /var/www/html/storage
+
+# Build Cachet
+RUN php artisan vendor:publish --tag=cachet
+
 EXPOSE 80
 
 CMD ["/entrypoint.sh"]

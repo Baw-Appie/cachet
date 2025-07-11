@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     git \
     supervisor \
+    cron \
     libicu-dev \
     libzip-dev \
     && docker-php-ext-install \
@@ -44,6 +45,10 @@ RUN COMPOSER_ALLOW_SUPERUSER=1 composer require predis/predis --no-scripts \
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 storage bootstrap/cache \
     && chmod +x artisan /entrypoint.sh
+
+# Setup crontab for Laravel scheduler
+RUN echo "* * * * * www-data php /var/www/html/artisan schedule:run >> /dev/null 2>&1" >> /etc/crontab \
+    && echo "" >> /etc/crontab
 
 # Create necessary directories and set permissions
 RUN mkdir -p /var/www/html/storage/framework/cache \

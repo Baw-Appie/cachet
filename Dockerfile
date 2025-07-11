@@ -57,7 +57,7 @@ RUN mkdir -p /var/www/html/storage/framework/cache \
     && chown -R www-data:www-data /var/www/html/storage
 
 # Build Cachet
-RUN php artisan vendor:publish --tag=cachet
+RUN php artisan vendor:publish --tag=cachet --tag=livewire:assets
 
 # Gen self-signed SSL certificate
 RUN openssl req -subj '/CN=example.com/O=My Company Name LTD./C=US' -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/ssl/private/ssl-cert-snakeoil.key -out /etc/ssl/certs/ssl-cert-snakeoil.pem
